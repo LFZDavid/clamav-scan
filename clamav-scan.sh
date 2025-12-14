@@ -49,7 +49,7 @@ load_env_config() {
     
     for env_file in "${env_files[@]}"; do
         if [[ -f "${env_file}" ]]; then
-            log_debug "Chargement de ${env_file}"
+            [[ "${DEBUG_MODE:-false}" == "true" ]] && echo "[DEBUG] Chargement de ${env_file}"
             set -a  # Export automatique
             source "${env_file}"
             set +a
@@ -57,8 +57,16 @@ load_env_config() {
     done
 }
 
-# Chargement initial de la config
-load_env_config
+# Chargement initial des variables d'environnement avant readonly
+if [[ -f "${SCRIPT_DIR}/.env.example" ]]; then
+    set -a; source "${SCRIPT_DIR}/.env.example" 2>/dev/null; set +a
+fi
+if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    set -a; source "${SCRIPT_DIR}/.env" 2>/dev/null; set +a
+fi
+if [[ -f "${SCRIPT_DIR}/.env.local" ]]; then
+    set -a; source "${SCRIPT_DIR}/.env.local" 2>/dev/null; set +a
+fi
 
 # Variables par défaut avec fallback
 readonly SCAN_DIR="${SCAN_DIR:-/data}"
@@ -129,7 +137,7 @@ log_error() {
 show_banner() {
     if [[ "${SILENT_MODE}" == "false" ]]; then
         echo ""
-        echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}╬══════════════════════════════════════════════════════════════╗${NC}"
         echo -e "${CYAN}║            🛡️  CLAMAV ANTIVIRUS SCANNER 🛡️                   ║${NC}"
         echo -e "${CYAN}║                      Version 2.0.0                           ║${NC}"
         echo -e "${CYAN}║                   Architecture Agents                        ║${NC}"
