@@ -491,13 +491,20 @@ scanner_agent_execute() {
     scanner_agent_build_options
 
     # Lancement du container pour le scan
+    # Ajuster les permissions selon le mode d'action
+    local scan_dir_mount="/scandir:ro"
+    if [[ "${ACTION_MODE}" == "quarantine" || "${ACTION_MODE}" == "move" || "${ACTION_MODE}" == "remove" ]]; then
+        scan_dir_mount="/scandir"
+        log_info "[ScannerAgent] Mode ${ACTION_MODE^^} - Accès en écriture au répertoire de scan"
+    fi
+
     local docker_run_options=(
         "--rm"
         "--name" "${CONTAINER_NAME}"
-        "-v" "${SCAN_DIR}:/scandir:ro"
+        "-v" "${SCAN_DIR}:${scan_dir_mount}"
         "-v" "${QUARANTINE_DIR}:/quarantine"
         "-v" "${LOG_DIR}:/logs"
-        "-v" "${SIGNATURES_DIR}:/var/lib/clamav:ro"
+        "-v" "${SIGNATURES_DIR}:/var/lib/clamav"
     )
 
     # Options de debug Docker
