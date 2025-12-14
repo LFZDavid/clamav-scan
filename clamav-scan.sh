@@ -68,19 +68,17 @@ if [[ -f "${SCRIPT_DIR}/.env.local" ]]; then
     set -a; source "${SCRIPT_DIR}/.env.local" 2>/dev/null; set +a
 fi
 
-# Variables par défaut avec fallback
-readonly SCAN_DIR="${SCAN_DIR:-/data}"
-readonly QUARANTINE_DIR="${QUARANTINE_DIR:-/var/clamav/quarantine}"
-readonly LOG_DIR="${LOG_DIR:-/var/log/clamav}"
-readonly SIGNATURES_DIR="${SIGNATURES_DIR:-/var/lib/clamav}"
+# Variables par défaut avec fallback (modifiables par les arguments CLI)
+SCAN_DIR="${SCAN_DIR:-/data}"
+QUARANTINE_DIR="${QUARANTINE_DIR:-/var/clamav/quarantine}"
+LOG_DIR="${LOG_DIR:-/var/log/clamav}"
+SIGNATURES_DIR="${SIGNATURES_DIR:-/var/lib/clamav}"
 
 readonly CONTAINER_NAME="${CONTAINER_NAME:-clamav-scanner}"
 readonly DOCKER_IMAGE="${DOCKER_IMAGE:-clamav/clamav:latest}"
 
-# Fichiers de log avec timestamp
+# Les variables SCAN_LOG et REPORT_FILE seront définies après le parsing des arguments
 readonly DATE_FORMAT=$(date +"%Y-%m-%d_%H-%M-%S")
-readonly SCAN_LOG="${LOG_DIR}/scan_${DATE_FORMAT}.log"
-readonly REPORT_FILE="${LOG_DIR}/report_${DATE_FORMAT}.txt"
 
 # Options par défaut
 SCAN_MODE="${SCANNER_AGENT_DEFAULT_MODE:-standard}"
@@ -93,12 +91,24 @@ UPDATE_ONLY=false
 # FONCTIONS UTILITAIRES ET LOGGING
 #-------------------------------------------------------------------------------
 
+# Initialiser les variables de logs après configuration
+init_log_files() {
+    SCAN_LOG="${LOG_DIR}/scan_${DATE_FORMAT}.log"
+    REPORT_FILE="${LOG_DIR}/report_${DATE_FORMAT}.txt"
+    
+    # Créer les répertoires nécessaires
+    mkdir -p "${LOG_DIR}" "${QUARANTINE_DIR}" "${SIGNATURES_DIR}" 2>/dev/null || true
+}
+
 log_debug() {
     if [[ "${DEBUG_MODE:-false}" == "true" ]] || [[ "${VERBOSE_MODE}" == "true" ]]; then
         local message="$1"
         local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
         echo -e "${PURPLE}[DEBUG]${NC} ${timestamp} - ${message}"
-        echo "[DEBUG] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+        if [[ -n "${SCAN_LOG:-}" ]]; then
+            mkdir -p "$(dirname "${SCAN_LOG}")" 2>/dev/null || true
+            echo "[DEBUG] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+        fi
     fi
 }
 
@@ -108,7 +118,11 @@ log_info() {
         local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
         echo -e "${BLUE}[INFO]${NC} ${timestamp} - ${message}"
     fi
-    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${SCAN_LOG}" 2>/dev/null || true
+    # Créer le répertoire de logs s'il n'existe pas
+    if [[ -n "${SCAN_LOG:-}" ]]; then
+        mkdir -p "$(dirname "${SCAN_LOG}")" 2>/dev/null || true
+        echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${SCAN_LOG}" 2>/dev/null || true
+    fi
 }
 
 log_success() {
@@ -117,21 +131,31 @@ log_success() {
         local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
         echo -e "${GREEN}[SUCCESS]${NC} ${timestamp} - ${message}"
     fi
-    echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${SCAN_LOG}" 2>/dev/null || true
+    # Créer le répertoire de logs s'il n'existe pas
+    if [[ -n "${SCAN_LOG:-}" ]]; then
+        mkdir -p "$(dirname "${SCAN_LOG}")" 2>/dev/null || true
+        echo "[SUCCESS] $(date '+%Y-%m-%d %H:%M:%S') - $1" >> "${SCAN_LOG}" 2>/dev/null || true
+    fi
 }
 
 log_warning() {
     local message="$1"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${YELLOW}[WARNING]${NC} ${timestamp} - ${message}" >&2
-    echo "[WARNING] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+    if [[ -n "${SCAN_LOG:-}" ]]; then
+        mkdir -p "$(dirname "${SCAN_LOG}")" 2>/dev/null || true
+        echo "[WARNING] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+    fi
 }
 
 log_error() {
     local message="$1"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     echo -e "${RED}[ERROR]${NC} ${timestamp} - ${message}" >&2
-    echo "[ERROR] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+    if [[ -n "${SCAN_LOG:-}" ]]; then
+        mkdir -p "$(dirname "${SCAN_LOG}")" 2>/dev/null || true
+        echo "[ERROR] ${timestamp} - ${message}" >> "${SCAN_LOG}" 2>/dev/null || true
+    fi
 }
 
 show_banner() {
@@ -801,7 +825,10 @@ parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -d|--directory)
-                SCAN_DIR="$2"
+                # Redéfinir la variable après validation
+                if [[ -n "$2" ]]; then
+                    SCAN_DIR="$2"
+                fi
                 shift 2
                 ;;
             -f|--full)
@@ -855,6 +882,9 @@ main() {
 
     # Parsing des arguments
     parse_arguments "$@"
+    
+    # Initialiser les fichiers de logs après parsing
+    init_log_files
 
     # Mode mise à jour uniquement
     if [[ "${UPDATE_ONLY}" == "true" ]]; then
