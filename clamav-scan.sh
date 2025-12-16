@@ -786,23 +786,30 @@ notification_agent_send_email() {
         *) subject="${subject_prefix} ❌ Erreur lors de l'analyse" ;;
     esac
 
-    if command -v mail &> /dev/null; then
-        {
-            echo "Rapport d'analyse ClamAV"
-            echo "========================"
-            echo ""
-            echo "Statut: $([ ${exit_code} -eq 0 ] && echo "CLEAN" || echo "INFECTED/ERROR")"
-            echo "Fichiers infectés: ${QUARANTINE_COUNT}"
-            echo "Durée: ${SCAN_DURATION} secondes"
-            echo "Répertoire: ${SCAN_DIR}"
-            echo ""
-            echo "Rapport complet: ${REPORT_FILE}"
-        } | mail -s "${subject}" "${EMAIL_TO}"
-        
+    local email_body=$(cat "${REPORT_FILE}" | sed 's/$/<br>/')  # Convertir en HTML simple
+    local email_status=$(send_html_email "${EMAIL_TO}" "${subject}" "${email_body}")
+
+    if [[ ${email_status} -eq 0 ]]; then
         log_success "[NotificationAgent] Email envoyé à ${EMAIL_TO}"
     else
         log_warning "[NotificationAgent] Commande 'mail' non disponible"
     fi
+}
+
+send_html_email() {
+    # Fonction future pour envoyer des emails HTML via curl
+    local to="$1"
+    local subject="$2"
+    local content="$3"
+
+    curl --url "smtps://$SMTP_SERVER:$SMTP_PORT" \
+        --ssl-reqd \
+        --mail-from "$EMAIL_FROM" \
+        --mail-rcpt "$to" \
+        --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+        -T <(echo -e "From: $EMAIL_FROM\nTo: $to\nSubject: $subject\nContent-Type: text/html; charset=UTF-8\n<html><body>$content</body></html>")
+
+    return $?  # Retourner le code de sortie de curl
 }
 
 #-------------------------------------------------------------------------------
