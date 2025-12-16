@@ -25,12 +25,12 @@
 #
 #===============================================================================
 
-# Mode strict mais compatible : arrêt sur erreur uniquement
-set -e
+# Configuration Bash compatible tous serveurs
+# Note: set -e désactivé pour compatibilité maximale
 
 # Activer pipefail seulement si supporté (Bash 3+)
-if [[ "${BASH_VERSINFO[0]}" -ge 3 ]]; then
-    set -o pipefail
+if [[ "${BASH_VERSINFO[0]:-0}" -ge 3 ]]; then
+    set -o pipefail 2>/dev/null || true
 fi
 
 #-------------------------------------------------------------------------------
