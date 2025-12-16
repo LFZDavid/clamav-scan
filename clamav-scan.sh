@@ -25,7 +25,13 @@
 #
 #===============================================================================
 
-set -euo pipefail
+# Mode strict mais compatible : arrêt sur erreur uniquement
+set -e
+
+# Activer pipefail seulement si supporté (Bash 3+)
+if [[ "${BASH_VERSINFO[0]}" -ge 3 ]]; then
+    set -o pipefail
+fi
 
 #-------------------------------------------------------------------------------
 # CONFIGURATION ET CHARGEMENT DES VARIABLES
