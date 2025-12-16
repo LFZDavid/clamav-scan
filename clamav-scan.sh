@@ -703,6 +703,11 @@ report_agent_generate() {
             ;;
     esac
 
+    # Si l'envoie de mail est activé, générer le rapport en texte
+    if [[ "${EMAIL_ENABLED:-false}" == "true" ]] && [[ "${format}" != "text" ]]; then
+        report_agent_generate_text "${exit_code}" "${status}" "${status_icon}" "${duration}"
+    fi
+
     log_success "[ReportAgent] Rapport généré: ${REPORT_FILE}"
     
     # Afficher le résumé si pas en mode silencieux
@@ -796,6 +801,213 @@ report_agent_generate_json() {
 }
 EOF
     log_info "[ReportAgent] Rapport JSON: ${REPORT_FILE%.txt}.json"
+}
+
+report_agent_generate_html() {
+    local exit_code=$1
+    local status=$2
+    local duration=$3
+
+    # Déterminer la couleur selon le statut
+    local status_color=""
+    local status_icon=""
+    case ${exit_code} in
+        0)
+            status_color="#28a745"
+            status_icon="✅"
+            ;;
+        1)
+            status_color="#dc3545"
+            status_icon="🦠"
+            ;;
+        *)
+            status_color="#ffc107"
+            status_icon="❌"
+            ;;
+    esac
+
+    cat > "${REPORT_FILE%.txt}.html" << EOF
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport d'Analyse Antivirus ClamAV</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+        .status {
+            background-color: ${status_color};
+            color: white;
+            padding: 20px;
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section h2 {
+            color: #495057;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .info-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .info-item strong {
+            color: #495057;
+        }
+        .logs {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .footer {
+            background: #343a40;
+            color: #adb5bd;
+            text-align: center;
+            padding: 20px;
+            font-size: 0.9em;
+        }
+        .emoji {
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ ClamAV Antivirus Scanner</h1>
+            <p>Rapport d'Analyse Automatique</p>
+        </div>
+
+        <div class="status">
+            ${status_icon} STATUT: ${status}
+        </div>
+
+        <div class="content">
+            <div class="section">
+                <h2>📊 Résumé de l'Analyse</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <strong>📅 Date d'analyse:</strong><br>
+                        $(date '+%Y-%m-%d %H:%M:%S')
+                    </div>
+                    <div class="info-item">
+                        <strong>📂 Répertoire scanné:</strong><br>
+                        ${SCAN_DIR}
+                    </div>
+                    <div class="info-item">
+                        <strong>⏱️ Durée de l'analyse:</strong><br>
+                        ${duration} secondes
+                    </div>
+                    <div class="info-item">
+                        <strong>🔧 Mode de scan:</strong><br>
+                        ${SCAN_MODE}
+                    </div>
+                    <div class="info-item">
+                        <strong>🛡️ Action sur infectés:</strong><br>
+                        ${ACTION_MODE}
+                    </div>
+                    <div class="info-item">
+                        <strong>🦠 Fichiers infectés:</strong><br>
+                        ${QUARANTINE_COUNT}
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>⚙️ Configuration</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <strong>🐳 Image Docker:</strong><br>
+                        ${DOCKER_IMAGE}
+                    </div>
+                    <div class="info-item">
+                        <strong>📦 Signatures:</strong><br>
+                        ${SIGNATURES_DIR}
+                    </div>
+                    <div class="info-item">
+                        <strong>📋 Logs:</strong><br>
+                        ${LOG_DIR}
+                    </div>
+                    <div class="info-item">
+                        <strong>🚫 Exclusions:</strong><br>
+                        ${EXCLUDE_DIRS:-aucune}
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📋 Détails du Scan</h2>
+                <div class="logs">
+$(if [[ -f "${LOG_DIR}/clamscan.log" ]]; then cat "${LOG_DIR}/clamscan.log"; else echo "Log détaillé non disponible"; fi)
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🔒 Fichiers en Quarantaine</h2>
+                <div class="logs">
+$(if [[ -d "${QUARANTINE_DIR}" ]] && [[ ${QUARANTINE_COUNT} -gt 0 ]]; then
+    ls -la "${QUARANTINE_DIR}"
+else
+    echo "Aucun fichier en quarantaine"
+fi)
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>🔐 Rapport généré automatiquement par ClamAV Docker Scanner v2.0.0</p>
+            <p>⚡ Architecture basée sur des agents modulaires</p>
+        </div>
+    </div>
+</body>
+</html>
+EOF
+    log_info "[ReportAgent] Rapport HTML: ${REPORT_FILE%.txt}.html"
 }
 
 report_agent_show_summary() {
