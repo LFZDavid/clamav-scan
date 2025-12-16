@@ -158,6 +158,52 @@ log_error() {
     fi
 }
 
+show_progress_spinner() {
+    local pid=$1
+    local message="${2:-Analyse en cours}"
+    local log_file="${LOG_DIR}/clamscan.log"
+    local start_time=$(date +%s)
+    local spin='-\|/'
+    local i=0
+    
+    # Affichage initial
+    if [[ "${VERBOSE_MODE}" == "true" ]]; then
+        echo -e "\n${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║${NC}                   PROGRESSION DU SCAN                        ${CYAN}║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}\n"
+    fi
+    
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) %4 ))
+        local elapsed=$(($(date +%s) - start_time))
+        
+        if [[ "${VERBOSE_MODE}" == "true" ]] && [[ -f "$log_file" ]]; then
+            # Mode verbose: statistiques détaillées
+            local files_scanned=$(grep -c "Scanning" "$log_file" 2>/dev/null || echo 0)
+            local infected=$(grep -c "FOUND" "$log_file" 2>/dev/null || echo 0)
+            
+            printf "\r${BLUE}[INFO]${NC} %c ${CYAN}Fichiers: %6d${NC}  ${RED}Infectés: %3d${NC}  ${YELLOW}Temps: %3ds${NC}" \
+                "${spin:$i:1}" $files_scanned $infected $elapsed
+        else
+            # Mode standard: spinner simple
+            printf "\r${BLUE}[INFO]${NC} %s %c  ${YELLOW}[%3ds]${NC}" "$message" "${spin:$i:1}" $elapsed
+        fi
+        
+        sleep 0.2
+    done
+    
+    # Ligne finale
+    if [[ "${VERBOSE_MODE}" == "true" ]] && [[ -f "$log_file" ]]; then
+        local files_scanned=$(grep -c "Scanning" "$log_file" 2>/dev/null || echo 0)
+        local infected=$(grep -c "FOUND" "$log_file" 2>/dev/null || echo 0)
+        local elapsed=$(($(date +%s) - start_time))
+        printf "\r${GREEN}[SUCCESS]${NC} ✓ ${CYAN}Fichiers: %6d${NC}  ${RED}Infectés: %3d${NC}  ${YELLOW}Temps: %3ds${NC}\n\n" \
+            $files_scanned $infected $elapsed
+    else
+        printf "\r${GREEN}[SUCCESS]${NC} %s ✓                    \n" "$message"
+    fi
+}
+
 show_banner() {
     if [[ "${SILENT_MODE}" == "false" ]]; then
         echo ""
@@ -512,16 +558,32 @@ scanner_agent_execute() {
         docker_run_options+=("--log-driver" "json-file")
     fi
 
-    # Timeout si configuré
-    if [[ -n "${SCAN_TIMEOUT:-}" ]]; then
-        timeout "${SCAN_TIMEOUT}" docker run "${docker_run_options[@]}" \
-            "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir
+    # Lancer le scan avec barre de progression
+    if [[ "${SILENT_MODE}" == "false" ]]; then
+        # Démarrer le scan en arrière-plan pour pouvoir afficher la progression
+        if [[ -n "${SCAN_TIMEOUT:-}" ]]; then
+            timeout "${SCAN_TIMEOUT}" docker run "${docker_run_options[@]}" \
+                "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir &
+        else
+            docker run "${docker_run_options[@]}" \
+                "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir &
+        fi
+        
+        local scan_pid=$!
+        show_progress_spinner $scan_pid "Analyse antivirus en cours"
+        wait $scan_pid
+        local scan_exit_code=$?
     else
-        docker run "${docker_run_options[@]}" \
-            "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir
+        # Mode silencieux: exécution directe sans progression
+        if [[ -n "${SCAN_TIMEOUT:-}" ]]; then
+            timeout "${SCAN_TIMEOUT}" docker run "${docker_run_options[@]}" \
+                "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir
+        else
+            docker run "${docker_run_options[@]}" \
+                "${DOCKER_IMAGE}" clamscan "${SCAN_OPTIONS[@]}" /scandir
+        fi
+        local scan_exit_code=$?
     fi
-
-    local scan_exit_code=$?
     local scan_end=$(date +%s)
     SCAN_DURATION=$((scan_end - scan_start))
 
